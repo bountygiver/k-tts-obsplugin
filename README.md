@@ -3,7 +3,7 @@ OBS plugin to extend donation alerts from kofi using various edge-tts features
 
 # Installation
 
-1. Download and extract from [the latest release](https://github.com/bountygiver/k-tts-obsplugin/releases/latest)
+1. Download and extract from the source zip file of [the latest release](https://github.com/bountygiver/k-tts-obsplugin/releases/latest)
 
 2. Add a **Media Source** and a **Browser source** to your OBS with the following settings. Add these sources to the scene you want the TTS to speak and the alerts to appear.
     - Media Source: ![Added media source settings](readme-imgs\media-source-settings.png)
@@ -22,7 +22,7 @@ OBS plugin to extend donation alerts from kofi using various edge-tts features
 
 # More Customization
 
-- `Allow message to use !v to select voice` - enabling this will allow donation messages to select from any voices by including a `!v<2-3 character language code><number>`
+- `Allow message to use !v to select voice` - enabling this will allow donation messages to select from any voices by including a `!v<2 character language code><number>`
 - `Censor Text` - this is a regex to replace text with `[CENSORED]` in donation messages as they come in. To filter simple words you can use `word1|text2|bad..` and it will filter away either `word1`, `text2` or any 5 letter text starts with `bad`
 
 # Overlay CSS:
