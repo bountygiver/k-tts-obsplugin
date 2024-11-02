@@ -55,10 +55,8 @@ def stopSound():
 def debugplayback():
     source = obs.obs_get_source_by_name(sourcename)
     mediastate = obs.obs_source_media_get_state(source)
-    obs.script_log(obs.LOG_DEBUG, "Media state: "+str(mediastate))
+    obs.script_log(obs.LOG_DEBUG, f"Media state {sourcename}: {mediastate} time: {obs.obs_source_media_get_time(source)}/{obs.obs_source_media_get_duration(source)}")
     obs.obs_source_release(source)
-
-    return mediastate == 1  #PLAYING is 1
   
 def hotkey_mapping(hotkey):
     if hotkey == "clear_playlist":
@@ -282,10 +280,12 @@ def play_task():
 def is_source_playing():
     source = obs.obs_get_source_by_name(sourcename)
     mediastate = obs.obs_source_media_get_state(source)
+    time = obs.obs_source_media_get_time(source)
+    duration = obs.obs_source_media_get_duration(source)
     #obs.script_log(obs.LOG_DEBUG, "Media state: "+str(mediastate))
     obs.obs_source_release(source)
 
-    return mediastate == 1  #PLAYING is 1
+    return duration and time < duration and mediastate == 1   #PLAYING is 1
     
 
 def script_update(settings):
