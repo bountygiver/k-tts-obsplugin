@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html class="h-100" lang="en">
+    <head>
+        <title>OBS Overlay for kofi donation plugin</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta charset="utf-8">
+        <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+        <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.9/angular.min.js"></script>
+        <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.9/angular-animate.min.js"></script>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+        <style>
+            .tts-sub {
+                font-size: 26px;
+                font-weight: 600;
+                font-family: 'DM Sans', 'Nunito', sans-serif;
+                font-variant-ligatures: no-common-ligatures;
+                transition: all 0.6s ease-out;
+                background-color: darkgray;
+                opacity: 1;
+                border-radius: 2rem;
+                padding: 1rem;
+                overflow: hidden;
+                position: absolute;
+                top: 0;
+                left: 0;
+            }
+
+            .tts-sub > div {
+                max-width: 100%;
+                word-break: break-word;
+            }
+
+            .tts-new {
+                transform: translate(0px, 100px);
+                opacity: 0;
+            }
+
+            .list {
+                list-style: none;
+            }
+
+            .list > li {
+                width: 400px;
+                height: auto;
+                height: calc-size(auto);
+                position: relative;
+            }
+
+            .list > li.ng-hide {
+                transform: translate(0px, -200px);
+                opacity: 0;
+            }
+
+            .text-speaking {
+                color: blue
+            }
+
+            .text-spoke {
+                color: red
+            }
+
+            #donolist {
+                margin-top: 50vh;
+            }
+        </style>
+    </head>
+    <body>
+        <div ng-app="obsDonoEdgeTts" ng-controller="mainController">
+            <ul class="list" id="donolist">
+                <li ng-repeat="x in subs" ng-class="{'tts-sub': true, 'tts-new': x.new}" ng-hide="x.hide">
+                    <div><span ng-repeat="y in x.text" ng-class="y.class">{{y.text}} </span></div>
+                </li>
+            </ul>
+            <div id="debugoutput"></div>
+        </div>
+    </body>
+    <script>
+        const app = angular.module('obsDonoEdgeTts', ['ngAnimate']);
+        app.controller('mainController', ['$scope', '$timeout', '$http', '$window', function($scope, $timeout, $http, $window) {
+            $scope.subs = []
+            $window.addEventListener("obs-kofi-push-subtitle", function (ev) {
+                const subObj = {
+                    hide: false,
+                    text: ev.detail.subtitle,
+                    new: true,
+                };
+                $scope.subs.push(subObj);
+                $scope.$apply();
+                subObj.text.forEach(s => {
+                    $timeout(function() {
+                        s.class = "text-speaking";
+                    }, s.offset / 10000);
+                    $timeout(function() {
+                        s.class = "text-spoke";
+                    }, (s.offset + s.duration) / 10000);
+                });
+
+                let maxtime = 5000 + (ev.detail.subtitle.reduce((m, c) => c.offset > m ? c.offset + c.duration : m, 0) / 10000);
+                $timeout(function() {
+                    subObj.new = false;
+                }, 15);
+                $timeout(function() {
+                    subObj.hide = true;
+                }, maxtime);
+            });
+        }]);
+    </script>
+</html>
