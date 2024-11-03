@@ -193,7 +193,7 @@ def loadFullKofiMessage(msg, donator):
 
 def handlekofipayload(msg):
     obs.script_log(obs.LOG_DEBUG, f"===Start handling payload {msg}===")
-    rex = 'New ([0-9.]+ )?donation from (.*?)!(.*?)$'
+    rex = 'New ([0-9.]+ )?donation from (.*?)! (.*?)$'
     m = re.findall(rex, msg)
     if len(m) == 0:
         obs.script_log(obs.LOG_DEBUG, f"Regex fail for {msg}")
@@ -207,7 +207,7 @@ def handlekofipayload(msg):
             amt = match[0]
             sender = match[1]
             contents = match[2].strip()
-            if not contents or len(contents) > 149 or contents == '""' or not contents.endswith('"'):
+            if not contents or len(contents) > 149 or contents.endswith('""') or not contents.endswith('"'):
                 obs.script_log(obs.LOG_DEBUG, f"Loading full message for {msg}")
                 contents = loadFullKofiMessage(contents, sender)
             obs.script_log(obs.LOG_DEBUG, f"Pushing dono event {(amt, sender, contents)}")
