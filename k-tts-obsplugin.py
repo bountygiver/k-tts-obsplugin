@@ -548,11 +548,11 @@ def script_load(settings):
         from signalrcore.hub_connection_builder import HubConnectionBuilder
         global ws
         global scrapper
-        scrapper = cloudscraper.create_scraper()
+        scrapper = cloudscraper.create_scraper(browser='chrome')
         def _ws_connect():
             global kofistreamalertURL
             s = scrapper.get(kofistreamalertURL)
-            negotiate = re.findall("`(.*negotiate-stream-alerts\\?negotiationToken.*?)`", s.text)
+            negotiate = re.findall("`(.*negotiate\\?negotiationToken.*?)`", s.text)
             headers = re.findall("headers: (.*)", s.text)
             r = scrapper.post(negotiate[0], headers=json.loads(headers[0].replace("'", '"')))
             handshake = json.loads(r.text)
