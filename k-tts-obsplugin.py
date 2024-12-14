@@ -220,8 +220,16 @@ def handlekofipayload(msg):
 def handleKofiStreamAlert(msg):
     obs.script_log(obs.LOG_DEBUG, f"websocket: {msg}")
     txtmsg = msg[0]
-    if len(msg) > 1:
+    if len(msg) > 1 and msg[1]:
         txtmsg = msg[1]
+    elif pq:
+        r = pq(txtmsg)
+        d = r('div.sa-label')
+        txtmsg = d.text()
+    else:
+        results = re.findall('<div class=\"sa-label\">(.*)<\\/div>', txtmsg)
+        if results and len(results) and results[0]:
+            txtmsg = results[0]
     Thread(target=handlekofipayload, args=(txtmsg,)).start()
 # ------------------------------------------------------------
 
