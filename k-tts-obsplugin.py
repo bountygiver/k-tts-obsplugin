@@ -51,6 +51,14 @@ def stopSound():
     current_sub = []
     playlist = []
     hidesource()
+    sources = obs.obs_enum_sources()
+    for src in sources:
+        if obs.obs_source_get_id(src) == "browser_source":
+            cd = obs.calldata_create()
+            obs.calldata_set_string(cd, "eventName", "obs-kofi-clear-subtitle")
+            obs.proc_handler_call(obs.obs_source_get_proc_handler(src), "javascript_event", cd)
+            obs.calldata_destroy(cd)
+    obs.source_list_release(sources)
 
 def debugplayback():
     source = obs.obs_get_source_by_name(sourcename)
@@ -58,10 +66,12 @@ def debugplayback():
     obs.script_log(obs.LOG_DEBUG, f"Media state {sourcename}: {mediastate} time: {obs.obs_source_media_get_time(source)}/{obs.obs_source_media_get_duration(source)}")
     obs.obs_source_release(source)
   
-def hotkey_mapping(hotkey):
-    if hotkey == "clear_playlist":
+def clear_playlist(pressed):
+    if pressed:
         stopSound()
-    if hotkey == "debug_playback":
+
+def debug_playback(pressed):
+    if pressed:
         debugplayback()
 
 
@@ -264,7 +274,8 @@ def play_task():
             
             playsound(filename,volume,speed)
             if len(current_sub):
-                for src in obs.obs_enum_sources():
+                sources = obs.obs_enum_sources()
+                for src in sources:
                     if obs.obs_source_get_id(src) == "browser_source":
                         cd = obs.calldata_create()
                         obs.calldata_set_string(cd, "eventName", "obs-kofi-push-subtitle")
@@ -277,6 +288,7 @@ def play_task():
                         }))
                         obs.proc_handler_call(obs.obs_source_get_proc_handler(src), "javascript_event", cd)
                         obs.calldata_destroy(cd)
+                obs.source_list_release(sources)
     else:
         wasplaying = True
         # if current_sub and len(current_sub):
@@ -523,15 +535,17 @@ def script_load(settings):
     unsetfilename()
     #obs.timer_add(server_handle,100)
     obs.timer_add(play_task,100)
-    
-    for k in hotkeys.keys(): 
-        def hotkeybtn(pressed):
-            if pressed:
-                hotkey_mapping(k)
-        hk[k] = obs.obs_hotkey_register_frontend(k, hotkeys[k], hotkeybtn)
-        a = obs.obs_data_get_array(settings, k)
-        obs.obs_hotkey_load(hk[k], a)
-        obs.obs_data_array_release(a)
+    global hk
+
+    hk["clear_playlist"] = obs.obs_hotkey_register_frontend("clear_playlist", hotkeys["clear_playlist"], lambda pressed: clear_playlist(pressed))
+    a = obs.obs_data_get_array(settings, "clear_playlist")
+    obs.obs_hotkey_load(hk["clear_playlist"], a)
+    obs.obs_data_array_release(a)
+
+    hk["debug_playback"] = obs.obs_hotkey_register_frontend("debug_playback", hotkeys["debug_playback"], lambda pressed: debug_playback(pressed))
+    a = obs.obs_data_get_array(settings, "debug_playback")
+    obs.obs_hotkey_load(hk["debug_playback"], a)
+    obs.obs_data_array_release(a)
 
     # Load external modules
     try:

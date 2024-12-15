@@ -105,6 +105,11 @@
                     subObj.hide = true;
                 }, maxtime);
             });
+            $window.addEventListener("obs-kofi-clear-subtitle", function (ev) {
+                $scope.subs.forEach(function(v) {
+                    v.hide = true;
+                });
+            });
         }]);
     </script>
 </html>
