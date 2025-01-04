@@ -574,9 +574,12 @@ def script_load(settings):
         def _ws_connect():
             global kofistreamalertURL
             s = scrapper.get(kofistreamalertURL)
-            negotiate = re.findall("`(.*negotiate\\?negotiationToken.*?)`", s.text)
+            negotiate = re.findall("/api/streamalerts/negotiation-token\\?userKey=[^\"]+", s.text)
+            negotiate_token = re.findall("`(.*negotiate\\?negotiationToken.*?)`", s.text)
             headers = re.findall("headers: (.*)", s.text)
-            r = scrapper.post(negotiate[0], headers=json.loads(headers[0].replace("'", '"')))
+            r = scrapper.post("https://ko-fi.com" + negotiate[0])
+            token_response = json.loads(r.text)
+            r = scrapper.post(negotiate_token[0].replace('${response.token}', token_response["token"]), headers=json.loads(headers[0].replace("'", '"')))
             handshake = json.loads(r.text)
             hub_connection = HubConnectionBuilder()\
             .with_url(handshake["url"], options={
