@@ -1,6 +1,6 @@
 import obspython as obs
 
-from time import time_ns, time
+from time import time_ns, time, sleep
 import random
 from threading import Thread
 import os
@@ -23,6 +23,7 @@ pitch = 0
 speed = 1.0
 twitchchannel = ""
 kofiId = ""
+kofiUId = None
 scrapper = None
 
 twitchthread = None
@@ -101,7 +102,7 @@ async def queuesound(tts, opts):
             match_voice = [f for f in voices if f["Locale"].split('-')[0].lower().startswith(matches[0][1].lower())]
             if match_voice:
                 tts = tts.replace(matches[0][0], "", 1)
-                idx = int(matches[0][2])
+                idx = matches[0][2].isdigit() and int(matches[0][2]) or 0
                 if idx > 0 and idx - 1 < len(match_voice):
                     curr_voice = match_voice[idx - 1]["ShortName"]
                 else:
@@ -183,12 +184,20 @@ def pushdonoEvent(amt, sender, contents):
 
 def loadFullKofiMessage(msg, donator):
     global kofiId
+    global kofiUId
     if not kofiId or scrapper == None:
         return msg
+    if not kofiUId:
+        try:
+            u = scrapper.get(f"https://ko-fi.com/{kofiId}")
+            uid = re.findall("buttonId: '(.*)?'", u.text)
+            kofiUId = uid[0]
+        except Exception as ex:
+            obs.script_log(obs.LOG_WARNING, f"Unable to retrieve information for ko-fi user to load full message.")
+            kofiUId = None
+            return msg
     try:
-        u = scrapper.get(f"https://ko-fi.com/{kofiId}")
-        uid = re.findall("buttonId: '(.*)?'", u.text)
-        s = scrapper.get(f'https://ko-fi.com/Buttons/LoadPageFeed?buttonId={uid[0]}')
+        s = scrapper.get(f'https://ko-fi.com/Buttons/LoadPageFeed?buttonId={kofiUId}&rt={int(time())}')
         x = pq(s.text)
         feeditems = x('.feeditem-unit')
         for feed in feeditems:
@@ -196,9 +205,8 @@ def loadFullKofiMessage(msg, donator):
             donoName = feedQuery('.feeditem-poster-name').text()
             if donoName == donator:
                 return feedQuery('.caption-pdg').text()
-
     except Exception as ex:
-        obs.script_log(obs.LOG_INFO, f"Failed: {repr(ex)}")
+        obs.script_log(obs.LOG_WARNING, f"Failed to load full message from {donator}: {repr(ex)}")
     return msg
 
 def handlekofipayload(msg):
@@ -218,6 +226,7 @@ def handlekofipayload(msg):
             sender = match[1]
             contents = match[2].strip()
             if not contents or len(contents) > 149 or contents.endswith('""') or not contents.endswith('"'):
+                sleep(2)
                 obs.script_log(obs.LOG_DEBUG, f"Loading full message for {msg}")
                 contents = loadFullKofiMessage(contents, sender)
             obs.script_log(obs.LOG_DEBUG, f"Pushing dono event {(amt, sender, contents)}")
@@ -321,6 +330,7 @@ def script_update(settings):
     global botname
     global kofistreamalertURL
     global kofiId
+    global kofiUId
 
     oldsource = sourcename
     sourcename     = obs.obs_data_get_string(settings, "sourcename")
@@ -334,6 +344,7 @@ def script_update(settings):
     pitch        = obs.obs_data_get_int(settings, "pitch")
     kofistreamalertURL = obs.obs_data_get_string(settings, "kofistreamalertURL")
     kofiId = obs.obs_data_get_string(settings, "kofiId")
+    kofiUId = None
     if alert_files:
         alertfile = []
         sz = obs.obs_data_array_count(alert_files)
