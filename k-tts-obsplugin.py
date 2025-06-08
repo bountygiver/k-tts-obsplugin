@@ -9,6 +9,9 @@ import asyncio
 import json
 import re
 import logging
+import requests
+
+VERSION = "1.4"
 
 sourcename = ""
 audiofolder = ""
@@ -24,7 +27,6 @@ speed = 1.0
 twitchchannel = ""
 kofiId = ""
 kofiUId = None
-scrapper = None
 
 twitchthread = None
 twitchconnection = None
@@ -44,6 +46,8 @@ hotkeys = {
     "debug_playback": "KOFI SPEAKER: Debug Playback state"
 }
 hk = {}
+k_url_field = None
+k_connect_field = None
 
 # --------- HOT KEYS -----------------------------------------
 def stopSound():
@@ -75,7 +79,60 @@ def debug_playback(pressed):
     if pressed:
         debugplayback()
 
+# ------------ WEB SCRAPPER HANDLER --------------------------
+class _scrapper:
+    scrapper = None
+    flaresolverr_url = None
+    use_flare = False
 
+    def get(self, url):
+        if self.scrapper and not self.use_flare:
+            return self.scrapper.get(url).text
+        if self.flaresolverr_url and self.flaresolverr_url != "":
+            headers = {"Content-Type": "application/json"}
+            data = {
+                "cmd": "request.get",
+                "url": url,
+                "maxTimeout": 10000
+            }
+            response = requests.post(self.flaresolverr_url, headers=headers, json=data)
+            if response.status_code == 200:
+                j = response.json()
+                if j["solution"] and j["solution"]["response"]:
+                    return j["solution"]["response"]
+            raise "Request failed for ${url} . Please make sure you are using a valid flaresolverr endpoint."
+        raise "No scrapper available"
+    
+    def post(self, url, data = None, headers = None):
+        if self.scrapper and not self.use_flare:
+            return self.scrapper.post(url, data = data, headers = headers).text
+        if self.flaresolverr_url and self.flaresolverr_url != "":
+            headers = {"Content-Type": "application/json"}
+            data = {
+                "cmd": "request.post",
+                "url": url,
+                "postData": data or {},
+                "maxTimeout": 10000
+            }
+            response = requests.post(self.flaresolverr_url, headers=headers, json=data)
+            if response.status_code == 200:
+                j = response.json()
+                if j["solution"] and j["solution"]["response"]:
+                    return j["solution"]["response"]
+            raise "Request failed for ${url} . Please make sure you are using a valid flaresolverr endpoint."
+        raise "No scrapper available"
+    
+    def hasCloudScrapper(self):
+        return self.scrapper is not None
+
+    def __init__(self):
+        try:
+            import cloudscraper
+            self.scrapper = cloudscraper.create_scraper(browser='chrome')
+        except ModuleNotFoundError:
+            obs.script_log(obs.LOG_ERROR, f"cloudscraper is not installed. Loading full messages may not work. Please installed it using pip install cloudscraper")
+    
+scrapper = _scrapper()
 # ------------------------------------------------------------
 async def queuesound(tts, opts):
     if tts_generator == None:
@@ -97,7 +154,7 @@ async def queuesound(tts, opts):
     speed_fl = speed - 1
     curr_voice = voice
     if commandvoice:
-        matches = re.findall('(!v([\w]{2})([0-9]{0,2})(?!\S))', tts)
+        matches = re.findall('(!v([\w]{2})([0-9]{0,2})\b', tts)
         if matches and len(matches) >= 1:
             match_voice = [f for f in voices if f["Locale"].split('-')[0].lower().startswith(matches[0][1].lower())]
             if match_voice:
@@ -190,7 +247,7 @@ def loadFullKofiMessage(msg, donator):
     if not kofiUId:
         try:
             u = scrapper.get(f"https://ko-fi.com/{kofiId}")
-            uid = re.findall("buttonId: '(.*)?'", u.text)
+            uid = re.findall("buttonId: '(.*)?'", u)
             kofiUId = uid[0]
         except Exception as ex:
             obs.script_log(obs.LOG_WARNING, f"Unable to retrieve information for ko-fi user to load full message.")
@@ -198,7 +255,7 @@ def loadFullKofiMessage(msg, donator):
             return msg
     try:
         s = scrapper.get(f'https://ko-fi.com/Buttons/LoadPageFeed?buttonId={kofiUId}&rt={int(time())}')
-        x = pq(s.text)
+        x = pq(s)
         feeditems = x('.feeditem-unit')
         for feed in feeditems:
             feedQuery = pq(feed)
@@ -344,6 +401,8 @@ def script_update(settings):
     pitch        = obs.obs_data_get_int(settings, "pitch")
     kofistreamalertURL = obs.obs_data_get_string(settings, "kofistreamalertURL")
     kofiId = obs.obs_data_get_string(settings, "kofiId")
+    scrapper.flaresolverr_url = obs.obs_data_get_string(settings, "flaresolverr_url")
+    scrapper.use_flare = not scrapper.hasCloudScrapper() or obs.obs_data_get_bool(settings, "use_flaresolverr")
     kofiUId = None
     if alert_files:
         alertfile = []
@@ -523,7 +582,7 @@ def twitchtask():
         try:
             twitchconnection.listen(twitchchannel, on_message=twitchcallback)
         except OSError:
-            print("Twitch connection is no longer listening due to socket error")
+            obs.script_log(obs.LOG_ERROR, "Twitch connection is no longer listening due to socket error")
         finally:
             twitchconnection = None
 
@@ -565,6 +624,9 @@ def script_load(settings):
         tts_generator = edge_tts
     except ModuleNotFoundError:
         obs.script_log(obs.LOG_ERROR, f"edge-tts is not installed. Please installed it using pip install edge-tts")
+
+    scrapper.flaresolverr_url = obs.obs_data_get_string(settings, "flaresolverr_url")
+    scrapper.use_flare = obs.obs_data_get_bool(settings, "use_flaresolverr")
         
     try:
         from twitch_chat_irc import twitch_chat_irc
@@ -577,21 +639,21 @@ def script_load(settings):
     except ModuleNotFoundError:
         obs.script_log(obs.LOG_ERROR, f"twich_chat_irc is not installed. Please installed it using pip install twich_chat_irc")
     try:
-        import cloudscraper
         from signalrcore.hub_connection_builder import HubConnectionBuilder
         global ws
-        global scrapper
-        scrapper = cloudscraper.create_scraper(browser='chrome')
         def _ws_connect():
+            if not scrapper.scrapper or scrapper.use_flare:
+                obs.script_log(obs.LOG_WARNING, f"Cannot connect to kofi webstream using flaresolverr")
+                return
             global kofistreamalertURL
             s = scrapper.get(kofistreamalertURL)
-            negotiate = re.findall("/api/streamalerts/negotiation-token\\?userKey=[^\"]+", s.text)
-            negotiate_token = re.findall("`(.*negotiate\\?negotiationToken.*?)`", s.text)
-            headers = re.findall("headers: (.*)", s.text)
+            negotiate = re.findall("/api/streamalerts/negotiation-token\\?userKey=[^\"]+", s)
+            negotiate_token = re.findall("`(.*negotiate\\?negotiationToken.*?)`", s)
+            headers = re.findall("headers: (.*)", s)
             r = scrapper.post("https://ko-fi.com" + negotiate[0])
-            token_response = json.loads(r.text)
+            token_response = json.loads(r)
             r = scrapper.post(negotiate_token[0].replace('${response.token}', token_response["token"]), headers=json.loads(headers[0].replace("'", '"')))
-            handshake = json.loads(r.text)
+            handshake = json.loads(r)
             hub_connection = HubConnectionBuilder()\
             .with_url(handshake["url"], options={
                         "access_token_factory": lambda : handshake['accessToken'],
@@ -616,12 +678,12 @@ def script_load(settings):
             hub_connection.on_close(disconnect)
             hub_connection.on_error(disconnect)
             hub_connection.start()
-            obs.script_log(obs.LOG_DEBUG, "Ko-Fi connected")
+            obs.script_log(obs.LOG_INFO, "Ko-Fi connected")
             global kofithread
             while kofithread is not None and connected:
                 pass
             hub_connection.stop()
-            obs.script_log(obs.LOG_DEBUG, "Ko-Fi connection closed")
+            obs.script_log(obs.LOG_INFO, "Ko-Fi connection closed")
         def ws_connect():
             stopkofi()
             global kofithread
@@ -642,6 +704,7 @@ def script_load(settings):
         pq = PyQuery
     except ModuleNotFoundError:
         obs.script_log(obs.LOG_ERROR, f"pyquery is not installed. Please installed it using pip install pyquery")
+    obs.script_log(obs.LOG_INFO, "Script Loaded v${VERSION}")
 
 def script_properties():
     props = obs.obs_properties_create()
@@ -651,8 +714,10 @@ def script_properties():
     populateMediaSources(src)
     dd = obs.obs_properties_add_list(props, "voicename", "Select Voice", obs.OBS_COMBO_TYPE_LIST , obs.OBS_COMBO_FORMAT_STRING)
     obs.obs_properties_add_bool(props, "commandvoice", "Allow message to use !v to select voice")
-    obs.obs_properties_add_float_slider(props, "speed", "Voice Speed", 0.25, 5.00, 0.05)
-    obs.obs_properties_add_int_slider(props, "pitch", "Voice Pitch", -100, 100, 5)
+    s = obs.obs_properties_add_float_slider(props, "speed", "Voice Speed", 0.25, 5.00, 0.05)
+    obs.obs_property_float_set_suffix(s, "X")
+    s = obs.obs_properties_add_int_slider(props, "pitch", "Voice Pitch", -100, 100, 5)
+    obs.obs_property_int_set_suffix(s, "Hz")
     obs.obs_properties_add_text(props, "censortext", "Censor Text", obs.OBS_TEXT_PASSWORD)
 
     obs.obs_properties_add_text(props, "testmessage", "Test Message", obs.OBS_TEXT_DEFAULT)
@@ -664,7 +729,8 @@ def script_properties():
     if tts_generator:
         asyncio.run(populateVoices(tts_generator, dd))
     else:
-        obs.obs_properties_add_text(props, "err_0", "edge-tts not found. TTS will not work.", obs.OBS_TEXT_INFO)
+        e = obs.obs_properties_add_text(props, "err_0", "edge-tts not found. TTS will not work.", obs.OBS_TEXT_INFO)
+        obs.obs_property_text_set_info_type(e, obs.OBS_TEXT_INFO_ERROR)
         depcheck_failed = True
 
     if twitch_irc:
@@ -672,22 +738,34 @@ def script_properties():
         obs.obs_properties_add_text(props, "botname", "Kofi bot name", obs.OBS_TEXT_DEFAULT)
         obs.obs_properties_add_button(props, "twitchconnect", "(Re)Connect to Twitch", connecttwitch)
     else:
-        obs.obs_properties_add_text(props, "err_1", "twich_chat_irc not found. Cannot connect to twitch chat.", obs.OBS_TEXT_INFO)
+        e = obs.obs_properties_add_text(props, "err_1", "twich_chat_irc not found. Cannot connect to twitch chat.", obs.OBS_TEXT_INFO)
+        obs.obs_property_text_set_info_type(e, obs.OBS_TEXT_INFO_ERROR)
 
-    if ws and scrapper:
-        obs.obs_properties_add_text(props, "kofiId", "Ko-Fi username", obs.OBS_TEXT_DEFAULT)
-        obs.obs_properties_add_text(props, "kofistreamalertURL", "Ko-Fi stream alerts URL", obs.OBS_TEXT_DEFAULT)
-        obs.obs_properties_add_button(props, "koficonnect", "(Re)Connect to Ko-Fi", lambda x,y: ws())
+    obs.obs_properties_add_text(props, "kofiId", "Ko-Fi username", obs.OBS_TEXT_DEFAULT)
+    if scrapper.hasCloudScrapper():
+        obs.obs_properties_add_bool(props, "use_flaresolverr", "Use Flaresolverr (Not compatible with Ko-Fi stream alerts)")
     else:
-        obs.script_log(obs.LOG_ERROR, f"signalrcore or cloudscraper is not installed. Please installed it using pip install signalrcore cloudscraper")
-        obs.obs_properties_add_text(props, "err_2", "SignalRCore/Cloudscraper not found. Cannot listen to ko-fi donation events.", obs.OBS_TEXT_INFO)
+        e = obs.obs_properties_add_text(props, "err_cloudscrapper", "Cloudscrapper not installed, you must enter a valid flaresolverr URL", obs.OBS_TEXT_INFO)
+        obs.obs_property_text_set_info_type(e, obs.OBS_TEXT_INFO_WARNING)
+        scrapper.use_flare = True
+    obs.obs_properties_add_text(props, "flaresolverr_url", "Flaresolverr URL", obs.OBS_TEXT_DEFAULT)
+    if ws and scrapper.hasCloudScrapper():
+        global k_url_field, k_connect_field
+        k_url_field = obs.obs_properties_add_text(props, "kofistreamalertURL", "Ko-Fi stream alerts URL", obs.OBS_TEXT_DEFAULT)
+        k_connect_field = obs.obs_properties_add_button(props, "koficonnect", "(Re)Connect to Ko-Fi", lambda x,y: ws())
+    else:
+        obs.script_log(obs.LOG_ERROR, f"signalrcore/cloudscraper is not installed. Please installed it using pip install signalrcore cloudscraper")
+        e = obs.obs_properties_add_text(props, "err_2", "SignalRCore or cloudscraper not found. Cannot listen to ko-fi donation events.", obs.OBS_TEXT_INFO)
+        obs.obs_property_text_set_info_type(e, obs.OBS_TEXT_INFO_WARNING)
         depcheck_failed = True
 
     if not pq:
-        obs.obs_properties_add_text(props, "err_3", "PyQuery not found. Cannot listen to ko-fi donation events.", obs.OBS_TEXT_INFO)
+        e = obs.obs_properties_add_text(props, "err_3", "PyQuery not found. Cannot listen to ko-fi donation events.", obs.OBS_TEXT_INFO)
+        obs.obs_property_text_set_info_type(e, obs.OBS_TEXT_INFO_WARNING)
 
     if depcheck_failed:
         obs.script_log(obs.LOG_ERROR, "Please install the missing dependencies.")
-        obs.obs_properties_add_text(props, "err_summ", "Dependencies not installed. Plugin will not work correctly", obs.OBS_TEXT_INFO)
+        e = obs.obs_properties_add_text(props, "err_summ", "Dependencies not installed. Plugin will not work correctly", obs.OBS_TEXT_INFO)
+        obs.obs_property_text_set_info_type(e, obs.OBS_TEXT_INFO_WARNING)
     
     return props

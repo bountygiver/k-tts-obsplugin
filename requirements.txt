@@ -1,5 +1,7 @@
 cloudscraper==1.2.71
 edge_tts==6.1.15
 pyquery==2.0.1
+requests==2.27.1
+requests-toolbelt==1.0.0
 signalrcore==0.9.5
 twitch_chat_irc==0.0.4
