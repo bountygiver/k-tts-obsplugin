@@ -21,10 +21,8 @@
                 opacity: 1;
                 border-radius: 2rem;
                 padding: 1rem;
+                margin: 1rem;
                 overflow: hidden;
-                position: absolute;
-                top: 0;
-                left: 0;
             }
 
             .tts-sub > div {
@@ -43,14 +41,41 @@
 
             .list > li {
                 width: 400px;
-                height: auto;
-                height: calc-size(auto);
                 position: relative;
+                display: grid;
+                grid-template-rows: 1fr;
+                min-height: 0;
+                overflow: hidden;
+                transition: all 150ms ease-in;
             }
 
             .list > li.ng-hide {
-                transform: translate(0px, -200px);
                 opacity: 0;
+                grid-template-rows: 0fr;
+            }
+
+            .sub-wrapper {
+                display: grid;
+                min-height: 0;
+                grid-template-columns: 1fr;
+                visibility: visible;
+                transition: visibility 150ms ease-in;
+                transform: rotate(180deg);
+            }
+
+            li.ng-hide .sub-wrapper {
+                visibility: hidden;
+            }
+
+            .sub-contents {
+                display: flex;
+                flex-direction: row;
+                flex-wrap: wrap;
+                justify-content: flex-start;
+                align-items: flex-end;
+                align-content: flex-end;
+                gap: 0px 0.5rem;
+                transform: rotate(180deg);
             }
 
             .text-speaking {
@@ -70,7 +95,11 @@
         <div ng-app="obsDonoEdgeTts" ng-controller="mainController">
             <ul class="list" id="donolist">
                 <li ng-repeat="x in subs" ng-class="{'tts-sub': true, 'tts-new': x.new}" ng-hide="x.hide">
-                    <div><span ng-repeat="y in x.text" ng-class="y.class">{{y.text}} </span></div>
+                    <div class="sub-wrapper">
+                        <div class="sub-contents">
+                            <span ng-repeat="y in x.text" ng-class="y.class">{{y.text}} </span>
+                        </div>
+                    </div>
                 </li>
             </ul>
             <div id="debugoutput"></div>
