@@ -100,7 +100,7 @@ class _scrapper:
                 j = response.json()
                 if j["solution"] and j["solution"]["response"]:
                     return j["solution"]["response"]
-            raise f"Request failed for ${url} . Please make sure you are using a valid flaresolverr endpoint."
+            raise f"Request failed for {url} . Please make sure you are using a valid flaresolverr endpoint."
         raise "No scrapper available"
     
     def post(self, url, data = None, headers = None):
@@ -119,7 +119,7 @@ class _scrapper:
                 j = response.json()
                 if j["solution"] and j["solution"]["response"]:
                     return j["solution"]["response"]
-            raise f"Request failed for ${url} . Please make sure you are using a valid flaresolverr endpoint."
+            raise f"Request failed for {url} . Please make sure you are using a valid flaresolverr endpoint."
         raise "No scrapper available"
     
     def hasCloudScrapper(self):
@@ -704,7 +704,7 @@ def script_load(settings):
         pq = PyQuery
     except ModuleNotFoundError:
         obs.script_log(obs.LOG_ERROR, f"pyquery is not installed. Please installed it using pip install pyquery")
-    obs.script_log(obs.LOG_INFO, f"Script Loaded v ${VERSION}")
+    obs.script_log(obs.LOG_INFO, f"Script Loaded v {VERSION}")
 
 def script_properties():
     props = obs.obs_properties_create()
