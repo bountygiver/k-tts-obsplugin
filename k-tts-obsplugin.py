@@ -584,6 +584,7 @@ def twitchtask():
         except OSError:
             obs.script_log(obs.LOG_ERROR, "Twitch connection is no longer listening due to socket error")
         finally:
+            obs.script_log(obs.LOG_INFO, "Twitch connection closed!")
             twitchconnection = None
 
 def connecttwitch(props,prop):

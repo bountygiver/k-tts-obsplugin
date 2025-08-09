@@ -6,7 +6,7 @@ OBS plugin to extend donation alerts from kofi using various edge-tts features
 1. Download and extract from the source zip file of [the latest release](https://github.com/bountygiver/k-tts-obsplugin/releases/latest)
 
 2. Add a **Media Source** and a **Browser source** to your OBS with the following settings. Add these sources to the scene you want the TTS to speak and the alerts to appear.
-    - Media Source: ![Added media source settings](readme-imgs\media-source-settings.png)
+    - Media Source: ![Added media source settings](readme-imgs/media-source-settings.png)
     - Browser Source: Enable `Local file` checkbox and choose the `overlay.html` from the extracted files as the `Local file` path field. Then fit the source to the entire screen.
 
 2. Setup OBS python script. You will need [python 3](https://www.python.org/downloads/). Then point to its install directory in OBS. By going to Tools -> Sccripts -> Python Settings tab. Then link to the install path of python.
