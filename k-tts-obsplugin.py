@@ -13,33 +13,10 @@ import requests
 
 VERSION = "1.4"
 
-sourcename = ""
-audiofolder = ""
-testmsg = ""
-alertfile = []
-censors = ""
-botname = ""
-voice = "it-IT-DiegoNeural"
-commandvoice = False
-kofistreamalertURL = ""
-pitch = 0
-speed = 1.0
-twitchchannel = ""
-kofiId = ""
-kofiUId = None
-
-twitchthread = None
-twitchconnection = None
-kofithread = None
-
 wasplaying = False
 recentdonations = []
 
 playlist = []
-tempfiles = []
-voices = []
-current_sub = []
-sub_time = 0
 
 hotkeys = {
     "clear_playlist": "KOFI SPEAKER: Stop Sound & Clear Playlist",
@@ -49,11 +26,14 @@ hk = {}
 k_url_field = None
 k_connect_field = None
 
+try:
+    from pyquery import PyQuery
+except ModuleNotFoundError:
+    obs.script_log(obs.LOG_ERROR, f"pyquery is not installed. Please installed it using pip install pyquery")
+
 # --------- HOT KEYS -----------------------------------------
 def stopSound():
     global playlist
-    global current_sub
-    current_sub = []
     playlist = []
     hidesource()
     sources = obs.obs_enum_sources()
@@ -66,9 +46,9 @@ def stopSound():
     obs.source_list_release(sources)
 
 def debugplayback():
-    source = obs.obs_get_source_by_name(sourcename)
+    source = obs.obs_get_source_by_name(CurrentSettings.sourcename)
     mediastate = obs.obs_source_media_get_state(source)
-    obs.script_log(obs.LOG_DEBUG, f"Media state {sourcename}: {mediastate} time: {obs.obs_source_media_get_time(source)}/{obs.obs_source_media_get_duration(source)}")
+    obs.script_log(obs.LOG_DEBUG, f"Media state {CurrentSettings.sourcename}: {mediastate} time: {obs.obs_source_media_get_time(source)}/{obs.obs_source_media_get_duration(source)}")
     obs.obs_source_release(source)
   
 def clear_playlist(pressed):
@@ -138,25 +118,16 @@ async def queuesound(tts, opts):
     if tts_generator == None:
         obs.script_log(obs.LOG_ERROR,f"edge_tts is not installed! Script will not work!")
         return
-    global playlist
-    global tempfiles
-    global voice
-    global commandvoice
-    global speed
-    global pitch
-    global voices
-    global alertfile
-    file = tempfile.NamedTemporaryFile(dir=audiofolder.name, suffix=".mp3", delete=False)
-    tempfiles.append(file)
+    file = tempfile.NamedTemporaryFile(dir=CurrentSettings.audiofolder.name, suffix=".mp3", delete=False)
     local_pitch = "+0Hz"
     local_speed = "+0%"
-    pitch_int = pitch
-    speed_fl = speed - 1
-    curr_voice = voice
-    if commandvoice:
+    pitch_int = CurrentSettings.pitch
+    speed_fl = CurrentSettings.speed - 1
+    curr_voice = CurrentSettings.voice
+    if CurrentSettings.commandvoice:
         matches = re.findall('(!v([\w]{2})([0-9]{0,2}))\\b', tts)
         if matches and len(matches) >= 1:
-            match_voice = [f for f in voices if f["Locale"].split('-')[0].lower().startswith(matches[0][1].lower())]
+            match_voice = [f for f in CurrentSettings.voices if f["Locale"].split('-')[0].lower().startswith(matches[0][1].lower())]
             if match_voice:
                 tts = tts.replace(matches[0][0], "", 1)
                 idx = matches[0][2].isdigit() and int(matches[0][2]) or 0
@@ -169,7 +140,7 @@ async def queuesound(tts, opts):
         if "pitch" in opts:
             pitch_int = int(opts["pitch"])
         if "voice" in opts:
-            match_voice = [v for v in voices if opts["voice"] in v["Name"]]
+            match_voice = [v for v in CurrentSettings.voices if opts["voice"] in v["Name"]]
             if len(match_voice):
                 curr_voice = match_voice[0]["ShortName"]
         if "speed" in opts:
@@ -183,8 +154,7 @@ async def queuesound(tts, opts):
     elif speed_fl > 0:
         local_speed = f"{int((1 - speed_fl) * 100)}%"
 
-    global censors
-    tts = re.sub(f"\\b({censors})\\b", "[CENSORED]", tts, flags=re.IGNORECASE)
+    tts = re.sub(f"\\b({CurrentSettings.censors})\\b", "[CENSORED]", tts, flags=re.IGNORECASE)
     
     communicate = tts_generator.Communicate(tts, curr_voice, pitch = local_pitch, rate = local_speed)
     subs = []
@@ -211,14 +181,14 @@ async def queuesound(tts, opts):
             txtidx = endIdx
     if subs[-1]:
         subs[-1][2] = subs[-1][2] + tts[txtidx:]
-    if alertfile and len(alertfile):
-        playlist.append((random.choice(alertfile), {}))
+    alert_audio = CurrentSettings.get_random_alert()
+    if alert_audio:
+        playlist.append((alert_audio, {}))
     playlist.append((file.name, opts, subs))
     obs.script_log(obs.LOG_DEBUG,f"Queued {tts} in {file.name}")
 
 def matchrecentdonos(amt, sender, contents):
     t = time()
-    global recentdonations
     partial_matches = [m for m in recentdonations if m[0] > t - 60 and m[1] == amt and m[2] == sender]
     for m in partial_matches:
         if (m[3] == contents):
@@ -240,25 +210,23 @@ def pushdonoEvent(amt, sender, contents):
         asyncio.run(queuesound(f'New {amt} donation from {sender}! {contents}', {}))
 
 def loadFullKofiMessage(msg, donator):
-    global kofiId
-    global kofiUId
-    if not kofiId or scrapper == None:
+    if not CurrentSettings.kofiId or scrapper == None:
         return msg
-    if not kofiUId:
+    if not CurrentSettings.kofiUId:
         try:
-            u = scrapper.get(f"https://ko-fi.com/{kofiId}")
+            u = scrapper.get(f"https://ko-fi.com/{CurrentSettings.kofiId}")
             uid = re.findall("buttonId: '(.*)?'", u)
-            kofiUId = uid[0]
+            CurrentSettings.kofiUId = uid[0]
         except Exception as ex:
             obs.script_log(obs.LOG_WARNING, f"Unable to retrieve information for ko-fi user to load full message.")
-            kofiUId = None
+            CurrentSettings.kofiUId = None
             return msg
     try:
-        s = scrapper.get(f'https://ko-fi.com/Buttons/LoadPageFeed?buttonId={kofiUId}&rt={int(time())}')
-        x = pq(s)
+        s = scrapper.get(f'https://ko-fi.com/Buttons/LoadPageFeed?buttonId={CurrentSettings.kofiUId}&rt={int(time())}')
+        x = PyQuery(s)
         feeditems = x('.feeditem-unit')
         for feed in feeditems:
-            feedQuery = pq(feed)
+            feedQuery = PyQuery(feed)
             donoName = feedQuery('.feeditem-poster-name').text()
             if donoName == donator:
                 return feedQuery('.caption-pdg').text()
@@ -298,15 +266,17 @@ def handleKofiStreamAlert(msg):
     txtmsg = msg[0]
     if len(msg) > 1 and msg[1]:
         txtmsg = msg[1]
-    elif pq:
-        r = pq(txtmsg)
+    elif PyQuery:
+        r = PyQuery(txtmsg)
         d = r('div.sa-label')
         txtmsg = d.text()
     else:
         results = re.findall('<div class=\"sa-label\">(.*)<\\/div>', txtmsg)
         if results and len(results) and results[0]:
             txtmsg = results[0]
-    Thread(target=handlekofipayload, args=(txtmsg,)).start()
+    t = Thread(target=handlekofipayload, args=(txtmsg,))
+    t.daemon = True # Daemon thread as we don't care if it completes if the application terminates
+    t.start()
 # ------------------------------------------------------------
 
 
@@ -315,9 +285,6 @@ def script_description():
 
 def play_task():
     global wasplaying
-    global playlist
-    global current_sub
-    global sub_time
     
     if not is_source_playing():
         if wasplaying:
@@ -333,7 +300,6 @@ def play_task():
             volume = 1.0
             speed = 1.0
             current_sub = sound[2] if len(sound) >=3 else []
-            sub_time = time_ns()
 
             if "vol" in opts:
                 volume = float(opts["vol"])
@@ -357,70 +323,249 @@ def play_task():
                 obs.source_list_release(sources)
     else:
         wasplaying = True
-        # if current_sub and len(current_sub):
-        #     sub_elapsed = (time_ns() - sub_time) / 100
-        #     if current_sub[0][0] < sub_elapsed:
-        #         obs.script_log(obs.LOG_DEBUG, f"Subtitle: {current_sub.pop(0)} on {sub_elapsed}")
 
 
 def is_source_playing():
-    source = obs.obs_get_source_by_name(sourcename)
-    mediastate = obs.obs_source_media_get_state(source)
-    time = obs.obs_source_media_get_time(source)
-    duration = obs.obs_source_media_get_duration(source)
-    #obs.script_log(obs.LOG_DEBUG, "Media state: "+str(mediastate))
-    obs.obs_source_release(source)
+    if CurrentSettings.sourcename:
+        source = obs.obs_get_source_by_name(CurrentSettings.sourcename)
+        mediastate = obs.obs_source_media_get_state(source)
+        time = obs.obs_source_media_get_time(source)
+        duration = obs.obs_source_media_get_duration(source)
+        obs.obs_source_release(source)
 
-    return duration and time < duration and mediastate == 1   #PLAYING is 1
+        return duration and time < duration and mediastate == 1   #PLAYING is 1
+    return False
+
+#==============================================================================
+#
+#   Settings
+#
+#==============================================================================
+class ScriptSettings:
+    def __init__(self):
+        self.sourcename = ""
+        self.voice = "it-IT-DiegoNeural"
+        self.pitch = 0
+        self.speed = 1
+        self.kofiId = None
+        self.kofiUId = None
+        self.audiofolder = tempfile.TemporaryDirectory(ignore_cleanup_errors = True)
+        self.voices = []
+
+    def save(self, settings):
+        pass
+
+    def load(self, settings):
+        sourcename              = obs.obs_data_get_string(settings, "sourcename")
+        self.voice              = obs.obs_data_get_string(settings, "voicename")
+        self.commandvoice       = obs.obs_data_get_bool(settings, "commandvoice")
+        alert_files             = obs.obs_data_get_array(settings, "alertfile")
+        self.censors            = obs.obs_data_get_string(settings, "censortext")
+        self.twitchchannel      = obs.obs_data_get_string(settings, "twitchchannel")
+        self.botname            = obs.obs_data_get_string(settings, "botname")
+        self.speed              = obs.obs_data_get_double(settings, "speed")
+        self.pitch              = obs.obs_data_get_int(settings, "pitch")
+        self.kofistreamalertURL = obs.obs_data_get_string(settings, "kofistreamalertURL")
+        self.testmessage = obs.obs_data_get_string(settings, "testmessage")
+        new_kofi_id             = obs.obs_data_get_string(settings, "kofiId")
+        if new_kofi_id != self.kofiId:
+            self.kofiId = new_kofi_id
+            self.kofiUId = None
+
+        self.flaresolverr_url   = obs.obs_data_get_string(settings, "flaresolverr_url")
+        self.use_flare          = not scrapper.hasCloudScrapper() or obs.obs_data_get_bool(settings, "use_flaresolverr")
+        if self.sourcename != sourcename:
+            hidesource()
+            unsetfilename()
+            self.sourcename = sourcename
+
+        scrapper.flaresolverr_url = self.flaresolverr_url
+        scrapper.use_flare = self.use_flare
+
+        
+        if alert_files:
+            self.alert_files = []
+            sz = obs.obs_data_array_count(alert_files)
+            while sz > 0:
+                sz -= 1
+                arr_item = obs.obs_data_array_item(alert_files, sz)
+                filename = obs.obs_data_get_string(arr_item, "value")
+                if os.path.exists(filename):
+                    self.alert_files.append(filename)
+                obs.obs_data_release(arr_item)
+            obs.obs_data_array_release(alert_files)
+
+    def get_random_alert(self):
+        if self.alert_files and len(self.alert_files):
+            return random.choice(self.alert_files)
+        
+        
+    async def populateVoices(self, tts):
+        try:
+            self.voices = await tts.list_voices()
+        except Exception:
+            obs.script_log(obs.LOG_ERROR, "Failed to load voices!")
+
+#==============================================================================
+#
+#   Background Threads / Connection Handler
+#
+#==============================================================================
+class WebscoketConnector:
+    class WebSocketListener:
+        def __init__(self, hub_connection_builder, target_url, callback):
+            self.hub_connection_builder = hub_connection_builder
+            self.url = target_url
+            self.callback = callback
+            self.hub_connection = None
+
+        def connect(self):
+            if not scrapper.scrapper or scrapper.use_flare:
+                obs.script_log(obs.LOG_WARNING, f"Cannot connect to kofi webstream using flaresolverr")
+                return
+            if self.hub_connection:
+                obs.script_log(obs.LOG_WARNING, f"WebSocketListener already connected before, please re-initialize a new one")
+                return
+            s = scrapper.get(self.url)
+            negotiate = re.findall("/api/streamalerts/negotiation-token\\?userKey=[^\"]+", s)
+            negotiate_token = re.findall("`(.*negotiate\\?negotiationToken.*?)`", s)
+            headers = re.findall("headers: (.*)", s)
+            r = scrapper.post("https://ko-fi.com" + negotiate[0])
+            token_response = json.loads(r)
+            r = scrapper.post(negotiate_token[0].replace('${response.token}', token_response["token"]), headers=json.loads(headers[0].replace("'", '"')))
+            handshake = json.loads(r)
+            self.hub_connection = self.hub_connection_builder()\
+            .with_url(handshake["url"], options={
+                        "access_token_factory": lambda : handshake['accessToken'],
+                        "headers": {
+                            "mycustomheader": "mycustomheadervalue"
+                        }
+                    })\
+            .configure_logging(logging.ERROR)\
+            .with_automatic_reconnect({
+                "type": "raw",
+                "keep_alive_interval": 10,
+                "reconnect_interval": 5,
+                "max_attempts": 5
+            }).build()
+
+            self.hub_connection.on("newStreamAlert", self.callback)
+            self.connected = True
+            self.hub_connection.on_close(self.close)
+            self.hub_connection.on_error(self.close)
+            self.hub_connection.start()
+            obs.script_log(obs.LOG_INFO, "Ko-Fi connected")
+            self.connected = True
+            while self.connected:
+                pass
+            self.hub_connection.stop()
+            obs.script_log(obs.LOG_INFO, "Ko-Fi connection closed")
+
+        def close(self):
+            if self.hub_connection:
+                self.hub_connection.stop()
+            self.connected = False
+
+    def __init__(self):
+        self.listener = None
+        try:
+            from signalrcore.hub_connection_builder import HubConnectionBuilder
+            self.hub_connection_builder = HubConnectionBuilder
+        except ModuleNotFoundError:
+            obs.script_log(obs.LOG_ERROR, f"signalrcore or cloudscraper is not installed. Please installed it using pip install signalrcore cloudscraper")
+
+    def connect(self, url):
+        self.close_all()
+        if not self.can_use():
+            obs.script_log(obs.LOG_ERROR, f"signalrcore or cloudscraper is not installed. Please installed it using pip install signalrcore cloudscraper")
+            return
+        
+        if not url:
+            obs.script_log(obs.LOG_ERROR, f"Cannot connect to ko-fi without a valid URL!")
+            return
+        self.listener = self.WebSocketListener(self.hub_connection_builder, url, handleKofiStreamAlert)
+        kofithread = Thread(target=self.listener.connect)
+        kofithread.daemon = True
+        kofithread.start()
+
+    def close_all(self):
+        if self.listener != None:
+            self.listener.close()
+
+    def can_use(self):
+        return self.hub_connection_builder != None
+
+class TwitchConnector:
+    class TwitchListener:
+        def __init__(self, twitch_chat_irc, channel_name, callback):
+            self.twitch_chat_irc = twitch_chat_irc
+            self.channel_name = channel_name
+            self.callback = callback
+            self.twitchconnection = None
+        
+        def start_listen(self):
+            if not self.channel_name:
+                obs.script_log(obs.LOG_ERROR, "Cannot connect to twitch without a channel name")
+                return
+            
+            if self.twitchconnection:
+                obs.script_log(obs.LOG_WARNING, f"Twitch connection already connected before, please re-initialize a new one")
+                return
+            
+            self.twitchconnection = self.twitch_chat_irc.TwitchChatIRC()
+            obs.script_log(obs.LOG_DEBUG, f"Connected to twitch chat: {self.channel_name}")
+            try:
+                self.connected = True
+                self.twitchconnection.listen(self.channel_name, on_message=self.callback)
+            except OSError:
+                obs.script_log(obs.LOG_ERROR, "Twitch connection is no longer listening due to socket error")
+            finally:
+                obs.script_log(obs.LOG_INFO, "Twitch connection closed!")
+                self.connected = False
+
+        def close(self):
+            if self.connected:
+                obs.script_log(obs.LOG_DEBUG, f"Closing twitch connection...")
+                self.twitchconnection.close_connection()
+                self.connected = False
+
+    def __init__(self):
+        self.listener = None
+        try:
+            from twitch_chat_irc import twitch_chat_irc
+            self.twitch_irc = twitch_chat_irc
+        except ModuleNotFoundError:
+            self.twitch_irc = None
+            obs.script_log(obs.LOG_ERROR, f"twich_chat_irc is not installed. Please installed it using pip install twich_chat_irc")
+
+    def connect(self, channelname):
+        self.close_all()
+        if not self.can_use():
+            obs.script_log(obs.LOG_ERROR, f"twich_chat_irc is not installed. Cannot connect to twitch chat!")
+            return
+        
+        if not channelname:
+            obs.script_log(obs.LOG_ERROR, f"Cannot connect to twitch without a channel name!")
+            return
+        
+        self.listener = self.TwitchListener(self.twitch_irc, channelname, twitchcallback)
+        twitchthread = Thread(target = self.listener.start_listen)
+        twitchthread.daemon = True
+        twitchthread.start()
+
+    def close_all(self):
+        if self.listener != None:
+            self.listener.close()
+
+    def can_use(self):
+        return self.twitch_irc != None
     
+ws = WebscoketConnector()
+twitch = TwitchConnector()
+CurrentSettings = ScriptSettings()
 
 def script_update(settings):
-    global sourcename
-    global voice
-    global commandvoice
-    global testmsg
-    global alertfile
-    global censors
-    global twitchchannel
-    global speed
-    global pitch
-    global botname
-    global kofistreamalertURL
-    global kofiId
-    global kofiUId
-
-    oldsource = sourcename
-    sourcename     = obs.obs_data_get_string(settings, "sourcename")
-    voice       = obs.obs_data_get_string(settings, "voicename")
-    commandvoice = obs.obs_data_get_bool(settings, "commandvoice")
-    alert_files        = obs.obs_data_get_array(settings, "alertfile")
-    censors        = obs.obs_data_get_string(settings, "censortext")
-    twitchchannel        = obs.obs_data_get_string(settings, "twitchchannel")
-    botname        = obs.obs_data_get_string(settings, "botname")
-    speed        = obs.obs_data_get_double(settings, "speed")
-    pitch        = obs.obs_data_get_int(settings, "pitch")
-    kofistreamalertURL = obs.obs_data_get_string(settings, "kofistreamalertURL")
-    kofiId = obs.obs_data_get_string(settings, "kofiId")
-    scrapper.flaresolverr_url = obs.obs_data_get_string(settings, "flaresolverr_url")
-    scrapper.use_flare = not scrapper.hasCloudScrapper() or obs.obs_data_get_bool(settings, "use_flaresolverr")
-    kofiUId = None
-    if alert_files:
-        alertfile = []
-        sz = obs.obs_data_array_count(alert_files)
-        while sz > 0:
-            sz -= 1
-            arr_item = obs.obs_data_array_item(alert_files, sz)
-            filename = obs.obs_data_get_string(arr_item, "value")
-            if os.path.exists(filename):
-                alertfile.append(filename)
-            obs.obs_data_release(arr_item)
-        obs.obs_data_array_release(alert_files)
-        
-    testmsg = obs.obs_data_get_string(settings, "testmessage")
-
-    if oldsource != sourcename:
-        hidesource()
-        unsetfilename()
+    CurrentSettings.load(settings)
 
 def script_save(settings):
     for k in hotkeys.keys(): 
@@ -429,62 +574,29 @@ def script_save(settings):
       obs.obs_data_array_release(a)
 
 def script_unload():
-    global audiofolder
-    global twitchconnection
-    global twitchthread
-    #obs.timer_remove(server_handle)
     hidesource()
     unsetfilename()
-    if  twitchconnection != None:
-        twitchconnection.close_connection()
-        obs.script_log(obs.LOG_DEBUG, f"Closing twitch connection...")
-        if twitchthread != None:
-            twitchthread.join(5)
-    stopkofi()
+    twitch.close_all()
+    ws.close_all()
     obs.script_log(obs.LOG_DEBUG, "Unloading script")
-
-def stopkofi():
-    global kofithread
-    if kofithread:
-        tmp = kofithread
-        kofithread = None
-        tmp.join()
     
 
 def hidesource():
-    #obs.script_log(obs.LOG_DEBUG,"Trying to hide source "+sourcename)
-
     frontendscenes = obs.obs_frontend_get_scenes()
-    #obs.script_log(obs.LOG_DEBUG,str(frontendscenes))
-    
     for scenesource in frontendscenes:
-        #obs.script_log(obs.LOG_DEBUG,str(scenesource))
-
-    #scenesource = obs.obs_frontend_get_current_scene()
         scene = obs.obs_scene_from_source(scenesource)
-        #obs.script_log(obs.LOG_DEBUG,"Scene "+str(scene))
-
-        sceneitem = obs.obs_scene_find_source(scene,sourcename)
+        sceneitem = obs.obs_scene_find_source(scene, CurrentSettings.sourcename)
         if sceneitem:
-            #obs.script_log(obs.LOG_DEBUG,"Scene item "+str(sceneitem))
-
             obs.obs_sceneitem_set_visible(sceneitem,False)
-    
-        #obs.obs_source_release(scenesource)
+
     obs.source_list_release(frontendscenes)
 
 def unsetfilename():
-    source = obs.obs_get_source_by_name(sourcename)
-    #obs.script_log(obs.LOG_DEBUG,"Source "+str(source))
-
+    source = obs.obs_get_source_by_name(CurrentSettings.sourcename)
     settings = obs.obs_source_get_settings(source)
-    #obs.script_log(obs.LOG_DEBUG,str(obs.obs_data_get_json(settings)))
     obs.obs_data_set_string(settings,"local_file","")
     obs.obs_data_set_bool(settings,"close_when_inactive",True)
-    #obs.script_log(obs.LOG_DEBUG,str(obs.obs_data_get_json(settings)))
-
     obs.obs_source_update(source,settings)
-    
     obs.obs_data_release(settings)
     obs.obs_source_release(source)
 
@@ -495,63 +607,36 @@ def set_source_speed(source,speed):
     obs.obs_source_update(source,settings)
     obs.obs_data_release(settings)
 
-def playsound(filename,volume,speed):
-    obs.script_log(obs.LOG_DEBUG,"Trying to play "+filename+" to source "+sourcename)
-
+def playsound(filename, volume, speed):
+    obs.script_log(obs.LOG_DEBUG, f"Trying to play {filename} to source {CurrentSettings.sourcename}")
     scenesource = obs.obs_frontend_get_current_scene()
     scene = obs.obs_scene_from_source(scenesource)
-    #obs.script_log(obs.LOG_DEBUG,"Scene "+str(scene))
-
-    sceneitem = obs.obs_scene_find_source(scene,sourcename)
-    #obs.script_log(obs.LOG_DEBUG,"Scene item "+str(sceneitem))
-
+    sceneitem = obs.obs_scene_find_source(scene, CurrentSettings.sourcename)
     source = obs.obs_sceneitem_get_source(sceneitem)
-
     obs.obs_source_set_volume(source,volume)
     set_source_speed(source,speed)
-    
     obs.obs_sceneitem_set_visible(sceneitem,False)
-
     settings = obs.obs_source_get_settings(source)
-    #obs.script_log(obs.LOG_DEBUG,str(obs.obs_data_get_json(settings)))
     obs.obs_data_set_string(settings,"local_file",filename)
-    #obs.script_log(obs.LOG_DEBUG,str(obs.obs_data_get_json(settings)))
-
     obs.obs_source_update(source,settings)
-    
     obs.obs_sceneitem_set_visible(sceneitem,True)
-    
     obs.obs_data_release(settings)
     obs.obs_source_release(scenesource)
 
-    #obs.script_log(obs.LOG_DEBUG,"Should be visible now...")
-
 async def testplayasync():
-    global tempfiles
-    global voice
-    global testmsg
-    global alertfile
-    global playlist
     obs.script_log(obs.LOG_DEBUG, "Hit the test play button")
-    await queuesound(testmsg, {})
+    await queuesound(CurrentSettings.testmessage, {})
 
 def testplay(props,prop):
-    asyncio.run(testplayasync())
+    t = Thread(target = lambda : asyncio.run(testplayasync()))
+    t.daemon = True
+    t.start()
 
 def script_defaults(settings):    
 	obs.obs_data_set_default_double(settings, "speed", 1.0)
 	obs.obs_data_set_default_int(settings, "pitch", 0)
 	obs.obs_data_set_default_string(settings, "botname", "kofistreambot")
 
-async def populateVoices(tts, lst):
-    global voices
-    obs.obs_property_list_clear(lst)
-    try:
-        voices = await tts.list_voices()
-        for voice in voices:
-            obs.obs_property_list_add_string(lst, voice["FriendlyName"].replace("Microsoft Server Speech Text to Speech Voice", ""), voice["ShortName"])
-    except Exception:
-        obs.obs_property_list_add_string(lst, "[FAILED TO RETRIEVE VOICES]", "it-IT-DiegoNeural")
 
 def populateMediaSources(lst):
     obs.obs_property_list_clear(lst)
@@ -564,48 +649,20 @@ def populateMediaSources(lst):
     obs.source_list_release(sources)
 
 def twitchcallback(message):
-    global botname
     contents = message['message']
     chatter = message['display-name']
-    if chatter == botname:
+    if chatter == CurrentSettings.botname:
         obs.script_log(obs.LOG_DEBUG, f"Bot msg: {contents}")
         handlekofipayload(contents)
 
-def twitchtask():
-    global twitchconnection
-    global twitchchannel
-    global twitchthread
-    global twitch_irc
-    if twitch_irc != None and twitchchannel:
-        twitchconnection = twitch_irc.TwitchChatIRC()
-        obs.script_log(obs.LOG_DEBUG, f"Connected to twitch chat: {twitchchannel}")
-        try:
-            twitchconnection.listen(twitchchannel, on_message=twitchcallback)
-        except OSError:
-            obs.script_log(obs.LOG_ERROR, "Twitch connection is no longer listening due to socket error")
-        finally:
-            obs.script_log(obs.LOG_INFO, "Twitch connection closed!")
-            twitchconnection = None
-
-def connecttwitch(props,prop):
-    global twitchthread
-    if twitchconnection != None:
-        twitchconnection.close_connection()
-        obs.script_log(obs.LOG_DEBUG, f"Closing twitch connection...")
-        if twitchthread != None:
-            twitchthread.join(5)
-    twitchthread = Thread(target = twitchtask)
-    twitchthread.start()
-
+def connecttwitch(props, prop):
+    twitch.connect(CurrentSettings.twitchchannel)
 
 def script_load(settings):
-    global audiofolder
-    audiofolder = tempfile.TemporaryDirectory(ignore_cleanup_errors = True)
     obs.script_log(obs.LOG_DEBUG, "Loading script")
     hidesource()
     unsetfilename()
-    #obs.timer_add(server_handle,100)
-    obs.timer_add(play_task,100)
+    obs.timer_add(play_task, 100)
     global hk
 
     hk["clear_playlist"] = obs.obs_hotkey_register_frontend("clear_playlist", hotkeys["clear_playlist"], lambda pressed: clear_playlist(pressed))
@@ -623,88 +680,17 @@ def script_load(settings):
         import edge_tts
         global tts_generator
         tts_generator = edge_tts
+        asyncio.run(CurrentSettings.populateVoices(tts_generator))
     except ModuleNotFoundError:
         obs.script_log(obs.LOG_ERROR, f"edge-tts is not installed. Please installed it using pip install edge-tts")
 
-    scrapper.flaresolverr_url = obs.obs_data_get_string(settings, "flaresolverr_url")
-    scrapper.use_flare = obs.obs_data_get_bool(settings, "use_flaresolverr")
-        
-    try:
-        from twitch_chat_irc import twitch_chat_irc
-        global twitch_irc
-        twitch_irc = twitch_chat_irc
-        global twitchchannel
-        twitchchannel = obs.obs_data_get_string(settings, "twitchchannel")
-        if twitchchannel:
-            connecttwitch(None, None)
-    except ModuleNotFoundError:
-        obs.script_log(obs.LOG_ERROR, f"twich_chat_irc is not installed. Please installed it using pip install twich_chat_irc")
-    try:
-        from signalrcore.hub_connection_builder import HubConnectionBuilder
-        global ws
-        def _ws_connect():
-            if not scrapper.scrapper or scrapper.use_flare:
-                obs.script_log(obs.LOG_WARNING, f"Cannot connect to kofi webstream using flaresolverr")
-                return
-            global kofistreamalertURL
-            s = scrapper.get(kofistreamalertURL)
-            negotiate = re.findall("/api/streamalerts/negotiation-token\\?userKey=[^\"]+", s)
-            negotiate_token = re.findall("`(.*negotiate\\?negotiationToken.*?)`", s)
-            headers = re.findall("headers: (.*)", s)
-            r = scrapper.post("https://ko-fi.com" + negotiate[0])
-            token_response = json.loads(r)
-            r = scrapper.post(negotiate_token[0].replace('${response.token}', token_response["token"]), headers=json.loads(headers[0].replace("'", '"')))
-            handshake = json.loads(r)
-            hub_connection = HubConnectionBuilder()\
-            .with_url(handshake["url"], options={
-                        "access_token_factory": lambda : handshake['accessToken'],
-                        "headers": {
-                            "mycustomheader": "mycustomheadervalue"
-                        }
-                    })\
-            .configure_logging(logging.ERROR)\
-            .with_automatic_reconnect({
-                "type": "raw",
-                "keep_alive_interval": 10,
-                "reconnect_interval": 5,
-                "max_attempts": 5
-            }).build()
+    CurrentSettings.load(settings)
 
-            hub_connection.on("newStreamAlert", handleKofiStreamAlert)
-            connected = True
-            def disconnect():
-                obs.script_log(obs.LOG_ERROR, "Ko-Fi disconnected by peer")
-                nonlocal connected
-                connected = False
-            hub_connection.on_close(disconnect)
-            hub_connection.on_error(disconnect)
-            hub_connection.start()
-            obs.script_log(obs.LOG_INFO, "Ko-Fi connected")
-            global kofithread
-            while kofithread is not None and connected:
-                pass
-            hub_connection.stop()
-            obs.script_log(obs.LOG_INFO, "Ko-Fi connection closed")
-        def ws_connect():
-            stopkofi()
-            global kofithread
-            kofithread = Thread(target=_ws_connect)
-            kofithread.start()
+    if CurrentSettings.twitchchannel and twitch.can_use():
+        twitch.connect(CurrentSettings.twitchchannel)
+    if CurrentSettings.kofistreamalertURL and ws.can_use():
+        ws.connect(CurrentSettings.kofistreamalertURL)
 
-        ws = ws_connect
-        global kofistreamalertURL
-        kofistreamalertURL = obs.obs_data_get_string(settings, "kofistreamalertURL")
-        if kofistreamalertURL:
-            ws()
-    except ModuleNotFoundError:
-        obs.script_log(obs.LOG_ERROR, f"signalrcore or cloudscraper is not installed. Please installed it using pip install signalrcore cloudscraper")
-
-    try:
-        from pyquery import PyQuery
-        global pq
-        pq = PyQuery
-    except ModuleNotFoundError:
-        obs.script_log(obs.LOG_ERROR, f"pyquery is not installed. Please installed it using pip install pyquery")
     obs.script_log(obs.LOG_INFO, f"Script Loaded v {VERSION}")
 
 def script_properties():
@@ -728,13 +714,20 @@ def script_properties():
     depcheck_failed = False
     
     if tts_generator:
-        asyncio.run(populateVoices(tts_generator, dd))
+        obs.obs_property_list_clear(dd)
+        if len(CurrentSettings.voices) == 0:
+            asyncio.run(CurrentSettings.populateVoices(tts_generator))
+        if len(CurrentSettings.voices):
+            for voice in CurrentSettings.voices:
+                obs.obs_property_list_add_string(dd, voice["FriendlyName"].replace("Microsoft Server Speech Text to Speech Voice", ""), voice["ShortName"])
+        else:
+            obs.obs_property_list_add_string(dd, "[FAILED TO RETRIEVE VOICES]", "it-IT-DiegoNeural")
     else:
         e = obs.obs_properties_add_text(props, "err_0", "edge-tts not found. TTS will not work.", obs.OBS_TEXT_INFO)
         obs.obs_property_text_set_info_type(e, obs.OBS_TEXT_INFO_ERROR)
         depcheck_failed = True
 
-    if twitch_irc:
+    if twitch.can_use():
         obs.obs_properties_add_text(props, "twitchchannel", "Twith Channel", obs.OBS_TEXT_DEFAULT)
         obs.obs_properties_add_text(props, "botname", "Kofi bot name", obs.OBS_TEXT_DEFAULT)
         obs.obs_properties_add_button(props, "twitchconnect", "(Re)Connect to Twitch", connecttwitch)
@@ -750,17 +743,17 @@ def script_properties():
         obs.obs_property_text_set_info_type(e, obs.OBS_TEXT_INFO_WARNING)
         scrapper.use_flare = True
     obs.obs_properties_add_text(props, "flaresolverr_url", "Flaresolverr URL", obs.OBS_TEXT_DEFAULT)
-    if ws and scrapper.hasCloudScrapper():
+    if ws.can_use() and scrapper.hasCloudScrapper():
         global k_url_field, k_connect_field
         k_url_field = obs.obs_properties_add_text(props, "kofistreamalertURL", "Ko-Fi stream alerts URL", obs.OBS_TEXT_DEFAULT)
-        k_connect_field = obs.obs_properties_add_button(props, "koficonnect", "(Re)Connect to Ko-Fi", lambda x,y: ws())
+        k_connect_field = obs.obs_properties_add_button(props, "koficonnect", "(Re)Connect to Ko-Fi", lambda x,y: ws.connect(CurrentSettings.kofistreamalertURL))
     else:
         obs.script_log(obs.LOG_ERROR, f"signalrcore/cloudscraper is not installed. Please installed it using pip install signalrcore cloudscraper")
         e = obs.obs_properties_add_text(props, "err_2", "SignalRCore or cloudscraper not found. Cannot listen to ko-fi donation events.", obs.OBS_TEXT_INFO)
         obs.obs_property_text_set_info_type(e, obs.OBS_TEXT_INFO_WARNING)
         depcheck_failed = True
 
-    if not pq:
+    if not PyQuery:
         e = obs.obs_properties_add_text(props, "err_3", "PyQuery not found. Cannot listen to ko-fi donation events.", obs.OBS_TEXT_INFO)
         obs.obs_property_text_set_info_type(e, obs.OBS_TEXT_INFO_WARNING)
 
