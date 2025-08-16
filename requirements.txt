@@ -1,5 +1,5 @@
 cloudscraper==1.2.71
-edge_tts==6.1.15
+edge_tts==7.2.0
 pyquery==2.0.1
 requests==2.27.1
 requests-toolbelt==1.0.0
