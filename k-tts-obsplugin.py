@@ -11,7 +11,7 @@ import re
 import logging
 import requests
 
-VERSION = "1.4"
+VERSION = "1.5"
 
 wasplaying = False
 recentdonations = []
