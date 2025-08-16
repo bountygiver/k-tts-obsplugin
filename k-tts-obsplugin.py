@@ -222,7 +222,7 @@ def loadFullKofiMessage(msg, donator):
             CurrentSettings.kofiUId = None
             return msg
     try:
-        s = scrapper.get(f'https://ko-fi.com/Buttons/LoadPageFeed?buttonId={CurrentSettings.kofiUId}&rt={int(time())}')
+        s = scrapper.get(f'https://ko-fi.com/Feed/LoadPageFeed?buttonId={CurrentSettings.kofiUId}&rt={int(time())}')
         x = PyQuery(s)
         feeditems = x('.feeditem-unit')
         for feed in feeditems:
@@ -450,9 +450,12 @@ class WebscoketConnector:
             }).build()
 
             self.hub_connection.on("newStreamAlert", self.callback)
-            self.connected = True
-            self.hub_connection.on_close(self.close)
-            self.hub_connection.on_error(self.close)
+            def _close():
+                self.connected = False
+            def _open():
+                self.connected = True
+            self.hub_connection.on_close(_close)
+            self.hub_connection.on_open(_open)
             self.hub_connection.start()
             obs.script_log(obs.LOG_INFO, "Ko-Fi connected")
             self.connected = True
@@ -464,7 +467,6 @@ class WebscoketConnector:
         def close(self):
             if self.hub_connection:
                 self.hub_connection.stop()
-            self.connected = False
 
     def __init__(self):
         self.listener = None
@@ -502,6 +504,8 @@ class TwitchConnector:
             self.channel_name = channel_name
             self.callback = callback
             self.twitchconnection = None
+            self.reconnect_max = 5
+            self.reconnect_attempt = 0
         
         def start_listen(self):
             if not self.channel_name:
@@ -523,8 +527,16 @@ class TwitchConnector:
                 obs.script_log(obs.LOG_INFO, "Twitch connection closed!")
                 self.connected = False
 
+            self.reconnect_attempt = self.reconnect_attempt + 1
+            sleep(5 * self.reconnect_attempt)
+            if self.reconnect_attempt <= self.reconnect_max:
+                obs.script_log(obs.LOG_INFO, f"Attempting to reconnect to twitch...  ({self.reconnect_attempt}/{self.reconnect_max})")
+                self.twitchconnection = None
+                self.start_listen()
+
         def close(self):
-            if self.connected:
+            self.reconnect_attempt = self.reconnect_max + 1
+            if self.twitchconnection and self.connected:
                 obs.script_log(obs.LOG_DEBUG, f"Closing twitch connection...")
                 self.twitchconnection.close_connection()
                 self.connected = False
