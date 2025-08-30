@@ -11,7 +11,7 @@ import re
 import logging
 import requests
 
-VERSION = "1.5"
+VERSION = "1.6"
 
 wasplaying = False
 recentdonations = []
@@ -35,7 +35,6 @@ except ModuleNotFoundError:
 def stopSound():
     global playlist
     playlist = []
-    hidesource()
     sources = obs.obs_enum_sources()
     for src in sources:
         if obs.obs_source_get_id(src) == "browser_source":
@@ -43,6 +42,7 @@ def stopSound():
             obs.calldata_set_string(cd, "eventName", "obs-kofi-clear-subtitle")
             obs.proc_handler_call(obs.obs_source_get_proc_handler(src), "javascript_event", cd)
             obs.calldata_destroy(cd)
+    unsetfilename()
     obs.source_list_release(sources)
 
 def debugplayback():
@@ -156,7 +156,7 @@ async def queuesound(tts, opts):
 
     tts = re.sub(f"\\b({CurrentSettings.censors})\\b", "[CENSORED]", tts, flags=re.IGNORECASE)
     
-    communicate = tts_generator.Communicate(tts, curr_voice, pitch = local_pitch, rate = local_speed)
+    communicate = tts_generator.Communicate(tts, curr_voice, boundary = "WordBoundary", pitch = local_pitch, rate = local_speed)
     subs = []
     with (
         open(file.name, "wb")
@@ -289,8 +289,9 @@ def play_task():
     if not is_source_playing():
         if wasplaying:
             obs.script_log(obs.LOG_DEBUG, "Playback Done!")
-            hidesource()
             wasplaying = False
+            if len(playlist) == 0:
+                unsetfilename()
 
         #Check to see if there is anything new to play
         if len(playlist)>0:
@@ -375,7 +376,6 @@ class ScriptSettings:
         self.flaresolverr_url   = obs.obs_data_get_string(settings, "flaresolverr_url")
         self.use_flare          = not scrapper.hasCloudScrapper() or obs.obs_data_get_bool(settings, "use_flaresolverr")
         if self.sourcename != sourcename:
-            hidesource()
             unsetfilename()
             self.sourcename = sourcename
 
@@ -586,22 +586,11 @@ def script_save(settings):
       obs.obs_data_array_release(a)
 
 def script_unload():
-    hidesource()
     unsetfilename()
     twitch.close_all()
     ws.close_all()
     obs.script_log(obs.LOG_DEBUG, "Unloading script")
-    
 
-def hidesource():
-    frontendscenes = obs.obs_frontend_get_scenes()
-    for scenesource in frontendscenes:
-        scene = obs.obs_scene_from_source(scenesource)
-        sceneitem = obs.obs_scene_find_source(scene, CurrentSettings.sourcename)
-        if sceneitem:
-            obs.obs_sceneitem_set_visible(sceneitem,False)
-
-    obs.source_list_release(frontendscenes)
 
 def unsetfilename():
     source = obs.obs_get_source_by_name(CurrentSettings.sourcename)
@@ -612,28 +601,20 @@ def unsetfilename():
     obs.obs_data_release(settings)
     obs.obs_source_release(source)
 
-def set_source_speed(source,speed):
-    settings = obs.obs_source_get_settings(source)
+def set_source_speed(settings,speed):
     speedpct = int(speed*100)
     obs.obs_data_set_int(settings,"speed_percent",speedpct)
-    obs.obs_source_update(source,settings)
-    obs.obs_data_release(settings)
 
 def playsound(filename, volume, speed):
     obs.script_log(obs.LOG_DEBUG, f"Trying to play {filename} to source {CurrentSettings.sourcename}")
-    scenesource = obs.obs_frontend_get_current_scene()
-    scene = obs.obs_scene_from_source(scenesource)
-    sceneitem = obs.obs_scene_find_source(scene, CurrentSettings.sourcename)
-    source = obs.obs_sceneitem_get_source(sceneitem)
+    source = obs.obs_get_source_by_name(CurrentSettings.sourcename)
     obs.obs_source_set_volume(source,volume)
-    set_source_speed(source,speed)
-    obs.obs_sceneitem_set_visible(sceneitem,False)
     settings = obs.obs_source_get_settings(source)
+    set_source_speed(settings,speed)
     obs.obs_data_set_string(settings,"local_file",filename)
     obs.obs_source_update(source,settings)
-    obs.obs_sceneitem_set_visible(sceneitem,True)
     obs.obs_data_release(settings)
-    obs.obs_source_release(scenesource)
+    obs.obs_source_release(source)
 
 async def testplayasync():
     obs.script_log(obs.LOG_DEBUG, "Hit the test play button")
@@ -672,7 +653,6 @@ def connecttwitch(props, prop):
 
 def script_load(settings):
     obs.script_log(obs.LOG_DEBUG, "Loading script")
-    hidesource()
     unsetfilename()
     obs.timer_add(play_task, 100)
     global hk
