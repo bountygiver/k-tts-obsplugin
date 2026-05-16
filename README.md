@@ -24,6 +24,7 @@ OBS plugin to extend donation alerts from kofi using various edge-tts features
 
 - `Allow message to use !v to select voice` - enabling this will allow donation messages to select from any voices by including a `!v<2 character language code><number>`
 - `Censor Text` - this is a regex to replace text with `[CENSORED]` in donation messages as they come in. To filter simple words you can use `word1|text2|bad..` and it will filter away either `word1`, `text2` or any 5 letter text starts with `bad`
+- `String Replacements` - allows replacement of strings to be processed in TTS, an entry of `a|e` will make every "a" in the donation text to be pronounced as if it is an "e", note this happens after the regex for censor text feature so you may need to expand the regex to catch any potential bypass caused by your replacement rules.
 
 # Overlay CSS:
 It is recommended to keep the default css OBS provided to ensure the web source's background is transparent.

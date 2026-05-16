@@ -114,6 +114,72 @@ class _scrapper:
     
 scrapper = _scrapper()
 # ------------------------------------------------------------
+# Dono text processing
+# ------------------------------------------------------------
+class ReplacementStringToken:
+    def __init__(self, inString, outString=None):
+        self.string = outString or inString
+        if outString:
+            self.orig = inString
+        else:
+            self.orig = None
+
+    def try_replace(self, match, replace):
+        if not self.orig:
+            # We do not want to recursively replace
+            remaining_str = self.string
+            new_tokens = []
+            while True:
+                m = remaining_str.find(match)
+                if m == -1:
+                    break
+                new_tokens.append(ReplacementStringToken(remaining_str[:m]))
+                new_tokens.append(ReplacementStringToken(match, replace))
+                remaining_str = remaining_str[m + len(match):]
+            if len(remaining_str):
+                new_tokens.append(ReplacementStringToken(remaining_str))
+            return new_tokens
+
+        return [self]
+
+    # Get the substring of token, if token was never replaced it will return the normal substring, otherwise returns the original string
+    def substr(self, startIdx, length = -1):
+        if self.orig:
+            return self.orig
+        if length < 0:
+            return self.string[startIdx:]
+        return self.string[startIdx:startIdx + length]
+
+class ReplacementAwareString:
+    def __init__(self, inString, replace_dict):
+        self.orig = inString
+        tokens = [ReplacementStringToken(inString)]
+
+        for k in replace_dict:
+            tokens = [t for r in [x.try_replace(k, replace_dict[k]) for x in tokens] for t in r]
+
+        self.replace_dict = replace_dict.copy()
+        self.tokens = tokens
+
+    def get_replaced_string(self):
+        return "".join([x.string for x in self.tokens])
+
+    def get_original_string(self):
+        return "".join([x.orig or x.string for x in self.tokens])
+
+    def substr_to_orig(self, startIndex, length = -1):
+        outStr = ""
+        nolimit = length == -1
+        for t in self.tokens:
+            token_length = len(t.string)
+            if token_length > startIndex:
+                outStr = outStr + t.substr(max(0, startIndex), length)
+                length -= token_length - max(0, startIndex)
+            startIndex -= token_length
+            if not nolimit and length <= 0:
+                break
+        return outStr
+
 async def queuesound(tts, opts):
     if tts_generator == None:
         obs.script_log(obs.LOG_ERROR,f"edge_tts is not installed! Script will not work!")
@@ -155,6 +221,11 @@ async def queuesound(tts, opts):
         local_speed = f"{int((1 - speed_fl) * 100)}%"
 
     tts = re.sub(f"\\b({CurrentSettings.censors})\\b", "[CENSORED]", tts, flags=re.IGNORECASE)
+    replacement_things = ReplacementAwareString(tts, CurrentSettings.replacement_texts)
+    tts = replacement_things.get_replaced_string()
+    orig_tts = tts
+    if not CurrentSettings.replace_alert:
+        orig_tts = replacement_things.get_original_string()
     
     communicate = tts_generator.Communicate(tts, curr_voice, boundary = "WordBoundary", pitch = local_pitch, rate = local_speed)
     subs = []
@@ -169,7 +240,7 @@ async def queuesound(tts, opts):
     if len(subs):
         subs.sort(key=lambda s : s[0])
     else:
-        subs = [[0, 1, tts]]
+        subs = [[0, 1, orig_tts]]
 
     txtidx = 0
     for sub in subs:
@@ -177,10 +248,16 @@ async def queuesound(tts, opts):
         if matchIdx >= 0:
             startIdx = txtidx + matchIdx
             endIdx = startIdx + len(sub[2])
-            sub[2] = tts[txtidx:endIdx]
+            if CurrentSettings.replace_alert:
+                sub[2] = tts[txtidx:endIdx]
+            else:
+                sub[2] = replacement_things.substr_to_orig(txtidx, endIdx - txtidx)
             txtidx = endIdx
     if subs[-1]:
-        subs[-1][2] = subs[-1][2] + tts[txtidx:]
+        if CurrentSettings.replace_alert:
+            subs[-1][2] = subs[-1][2] + tts[txtidx:]
+        else:
+            subs[-1][2] = subs[-1][2] + replacement_things.substr_to_orig(txtidx)
     alert_audio = CurrentSettings.get_random_alert()
     if alert_audio:
         playlist.append((alert_audio, {}))
@@ -362,6 +439,8 @@ class ScriptSettings:
         self.commandvoice       = obs.obs_data_get_bool(settings, "commandvoice")
         alert_files             = obs.obs_data_get_array(settings, "alertfile")
         self.censors            = obs.obs_data_get_string(settings, "censortext")
+        replacement_texts       = obs.obs_data_get_array(settings, "replacementtext")
+        self.replace_alert      = obs.obs_data_get_bool(settings, "replacement_alerts")
         self.twitchchannel      = obs.obs_data_get_string(settings, "twitchchannel")
         self.botname            = obs.obs_data_get_string(settings, "botname")
         self.speed              = obs.obs_data_get_double(settings, "speed")
@@ -394,6 +473,24 @@ class ScriptSettings:
                     self.alert_files.append(filename)
                 obs.obs_data_release(arr_item)
             obs.obs_data_array_release(alert_files)
+
+        self.replacement_texts = {}
+        if replacement_texts:
+            sz = obs.obs_data_array_count(replacement_texts)
+            while sz > 0:
+                sz -= 1
+                arr_item = obs.obs_data_array_item(replacement_texts, sz)
+                replacement_rule = obs.obs_data_get_string(arr_item, "value")
+                r = [x.replace(' ', '') for x in replacement_rule.split('|', 1)]
+                if len(r) == 2 and len(r[0]) and len(r[1]):
+                    if r[0] in self.replacement_texts.keys():
+                        obs.script_log(obs.LOG_ERROR, f"Conflicting rules for {r[0]} in string replacement. Latter rules ignored.")
+                    self.replacement_texts[r[0]] = r[1]
+                else:
+                    obs.script_log(obs.LOG_ERROR, f"Replacement text line {sz + 1}: {replacement_rule} has an invalid format and is skipped")
+                obs.obs_data_release(arr_item)
+            obs.obs_data_array_release(replacement_texts)
+
 
     def get_random_alert(self):
         if self.alert_files and len(self.alert_files):
@@ -698,6 +795,10 @@ def script_properties():
     s = obs.obs_properties_add_int_slider(props, "pitch", "Voice Pitch", -100, 100, 5)
     obs.obs_property_int_set_suffix(s, "Hz")
     obs.obs_properties_add_text(props, "censortext", "Censor Text", obs.OBS_TEXT_PASSWORD)
+
+    obs.obs_properties_add_text(props, "replacementtext_help", "Use format <string to match>|<string to replace>, case sensitive, spaces will be ommitted because it breaks a lot of stuffs, this goes after censors so watch out what you replace that would allow people to say bad words with your replacements", obs.OBS_TEXT_INFO)
+    obs.obs_properties_add_editable_list(props, "replacementtext", "String Replacements", obs.OBS_EDITABLE_LIST_TYPE_STRINGS, "", None)
+    obs.obs_properties_add_bool(props, "replacement_alerts", "Preserve replacement for alerts in addition to TTS voice.")
 
     obs.obs_properties_add_text(props, "testmessage", "Test Message", obs.OBS_TEXT_DEFAULT)
     obs.obs_properties_add_button(props, "testbutton", "Test Playback", testplay)
