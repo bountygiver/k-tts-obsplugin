@@ -9,9 +9,9 @@ OBS plugin to extend donation alerts from kofi using various edge-tts features
     - Media Source: ![Added media source settings](readme-imgs/media-source-settings.png)
     - Browser Source: Enable `Local file` checkbox and choose the `overlay.html` from the extracted files as the `Local file` path field. Then fit the source to the entire screen.
 
-2. Setup OBS python script. You will need [python 3](https://www.python.org/downloads/). Then point to its install directory in OBS. By going to Tools -> Sccripts -> Python Settings tab. Then link to the install path of python.
+2. Setup OBS python script. You will need [python 3](https://www.python.org/downloads/). Then point to its install directory in OBS. By going to Tools -> Scripts -> Python Settings tab. Then link to the install path of python.
 
-3. Install the dependencies used by the script. You will need [pip](https://pip.pypa.io/en/stable/installation/) for this step. Afterwards, open a terminal on the directory of the extracted files from step 1 and run `pip install -r requirements.txt`
+3. Install the dependencies used by the script. You will need [pip](https://pip.pypa.io/en/stable/installation/) for this step. Afterwards, open a terminal on the directory of the extracted files from step 1 and run `python -m pip install -r requirements.txt`
 
 4. Add `k-tts-obsplugin.py` into the Scripts tab of OBS scripts using the + icon.
 
