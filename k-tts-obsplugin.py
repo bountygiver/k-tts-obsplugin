@@ -462,9 +462,8 @@ class ScriptSettings:
         scrapper.flaresolverr_url = self.flaresolverr_url
         scrapper.use_flare = self.use_flare
 
-        
+        self.alert_files = []
         if alert_files:
-            self.alert_files = []
             sz = obs.obs_data_array_count(alert_files)
             while sz > 0:
                 sz -= 1
