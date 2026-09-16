@@ -219,8 +219,8 @@ async def queuesound(tts, opts):
         local_speed = f"+{int((speed_fl - 1) * 100)}%"
     elif speed_fl > 0:
         local_speed = f"{int((1 - speed_fl) * 100)}%"
-
-    tts = re.sub(f"\\b({CurrentSettings.censors})\\b", "[CENSORED]", tts, flags=re.IGNORECASE)
+    if CurrentSettings.censors and len(CurrentSettings.censors):
+        tts = re.sub(f"\\b({CurrentSettings.censors})\\b", "[CENSORED]", tts, flags=re.IGNORECASE)
     replacement_things = ReplacementAwareString(tts, CurrentSettings.replacement_texts)
     tts = replacement_things.get_replaced_string()
     orig_tts = tts
@@ -429,6 +429,7 @@ class ScriptSettings:
         self.kofiUId = None
         self.audiofolder = tempfile.TemporaryDirectory(ignore_cleanup_errors = True)
         self.voices = []
+        self.alert_files = []
 
     def save(self, settings):
         pass
