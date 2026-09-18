@@ -211,6 +211,27 @@ async def queuesound(tts, opts):
                 curr_voice = match_voice[0]["ShortName"]
         if "speed" in opts:
             speed_fl = float(opts["pitch"])
+
+    def clamp(lb, up, value):
+        return min(up, max(lb, value))
+    
+    if CurrentSettings.customvoice:
+        matches = re.findall('(!p(\\-?[0-9]+))\\b', tts)
+        if matches and len(matches) >= 1:
+            pitch_int = int(matches[0][1])
+            tts = tts.replace(matches[0][0], "", 1)
+        matches = re.findall('(!s([0-9]+))\\b', tts)
+        if matches and len(matches) >= 1:
+            speed_fl = (int(matches[0][1]) / 100) - 1
+            tts = tts.replace(matches[0][0], "", 1)
+        matches = re.findall('(!l([0-9]+))\\b', tts)
+        if matches and len(matches) >= 1:
+            opts["vol"] = clamp(0.1, 100, int(matches[0][1])) / 100
+            tts = tts.replace(matches[0][0], "", 1)
+
+    pitch_int = clamp(-100, 100, pitch_int)
+    speed_fl = clamp(-0.75, 4, speed_fl)
+
     if pitch_int >= 0:
         local_pitch = f"+{pitch_int}Hz"
     elif pitch_int:
@@ -381,6 +402,7 @@ def play_task():
 
             if "vol" in opts:
                 volume = float(opts["vol"])
+            volume = volume * CurrentSettings.volume / 100
             
             playsound(filename,volume,speed)
             if len(current_sub):
@@ -425,6 +447,7 @@ class ScriptSettings:
         self.voice = "it-IT-DiegoNeural"
         self.pitch = 0
         self.speed = 1
+        self.volume = 100
         self.kofiId = None
         self.kofiUId = None
         self.audiofolder = tempfile.TemporaryDirectory(ignore_cleanup_errors = True)
@@ -438,6 +461,8 @@ class ScriptSettings:
         sourcename              = obs.obs_data_get_string(settings, "sourcename")
         self.voice              = obs.obs_data_get_string(settings, "voicename")
         self.commandvoice       = obs.obs_data_get_bool(settings, "commandvoice")
+        self.customvoice        = obs.obs_data_get_bool(settings, "customvoice")
+        self.volume             = obs.obs_data_get_double(settings, "volume")
         alert_files             = obs.obs_data_get_array(settings, "alertfile")
         self.censors            = obs.obs_data_get_string(settings, "censortext")
         replacement_texts       = obs.obs_data_get_array(settings, "replacementtext")
@@ -725,6 +750,7 @@ def testplay(props,prop):
 def script_defaults(settings):    
 	obs.obs_data_set_default_double(settings, "speed", 1.0)
 	obs.obs_data_set_default_int(settings, "pitch", 0)
+	obs.obs_data_set_default_int(settings, "volume", 100)
 	obs.obs_data_set_default_string(settings, "botname", "kofistreambot")
 
 
@@ -790,10 +816,13 @@ def script_properties():
     populateMediaSources(src)
     dd = obs.obs_properties_add_list(props, "voicename", "Select Voice", obs.OBS_COMBO_TYPE_LIST , obs.OBS_COMBO_FORMAT_STRING)
     obs.obs_properties_add_bool(props, "commandvoice", "Allow message to use !v to select voice")
+    obs.obs_properties_add_bool(props, "customvoice", "Allow customization of voice !p[-100-100] for pitch, !l[0-100] for volume, !s[0.25-5] for speed")
     s = obs.obs_properties_add_float_slider(props, "speed", "Voice Speed", 0.25, 5.00, 0.05)
     obs.obs_property_float_set_suffix(s, "X")
     s = obs.obs_properties_add_int_slider(props, "pitch", "Voice Pitch", -100, 100, 5)
     obs.obs_property_int_set_suffix(s, "Hz")
+    s = obs.obs_properties_add_int_slider(props, "volume", "Volume", 0, 100, 1)
+    obs.obs_property_int_set_suffix(s, "%")
     obs.obs_properties_add_text(props, "censortext", "Censor Text", obs.OBS_TEXT_PASSWORD)
 
     obs.obs_properties_add_text(props, "replacementtext_help", "Use format <string to match>|<string to replace>, case sensitive, spaces will be ommitted because it breaks a lot of stuffs, this goes after censors so watch out what you replace that would allow people to say bad words with your replacements", obs.OBS_TEXT_INFO)
